@@ -1,0 +1,51 @@
+name: Update World Cup feed
+
+# Runs the feed builder on a schedule, holding the SportMonks token in an
+# encrypted secret. Writes data/fixtures.json and commits it so GitHub Pages
+# serves the fresh feed next to index.html.
+
+on:
+  schedule:
+    # Every 5 minutes — the shortest interval GitHub Actions allows. Note that
+    # GitHub may delay scheduled runs by a few minutes under load, so treat the
+    # feed as "refreshes roughly every 5–10 minutes", not real-time.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # lets you trigger a refresh by hand from the Actions tab
+
+# Allow the job to push the updated data file back to the repo.
+permissions:
+  contents: write
+
+# Never run two updates at once.
+concurrency:
+  group: wc-feed
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build the feed (calls SportMonks server-side)
+        env:
+          WC_API_TOKEN: ${{ secrets.WC_API_TOKEN }}
+        run: node scripts/fetch-feed.mjs
+
+      - name: Commit feed if it changed
+        run: |
+          git config user.name "wc-feed-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/fixtures.json
+          if git diff --staged --quiet; then
+            echo "No change in feed — nothing to commit."
+          else
+            git commit -m "Update World Cup feed"
+            git push
+          fi
